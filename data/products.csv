@@ -1,0 +1,11 @@
+product_id,category_id,product_name,unit_cost,unit_price,is_active
+1,1,Smartphone X1,300.00,599.99,true
+2,1,Laptop Pro,800.00,1299.99,true
+3,1,Wireless Headphones,50.00,149.99,true
+4,2,Coffee Maker Deluxe,80.00,199.99,true
+5,2,Kitchen Knife Set,30.00,89.99,true
+6,3,Running Shoes,40.00,119.99,true
+7,3,Yoga Mat,15.00,49.99,true
+8,4,Office Chair,120.00,299.99,true
+9,4,Standing Desk,200.00,499.99,true
+10,5,Mystery Novel,5.00,14.99,true

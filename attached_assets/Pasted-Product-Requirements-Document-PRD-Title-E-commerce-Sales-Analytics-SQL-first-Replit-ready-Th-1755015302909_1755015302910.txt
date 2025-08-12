@@ -1,0 +1,621 @@
+Product Requirements Document (PRD)
+Title: E-commerce Sales Analytics (SQL-first, Replit-ready)
+This PRD defines a minimal-yet-powerful SQL analytics app that runs on Replit using a lightweight backend (Python + SQLite/Postgres) and exposes REST endpoints plus a simple UI to execute curated SQL queries for actionable business insights. Queries are intentionally “basic” SQL (CTEs, window functions, aggregates, indexes) but deliver complex findings like RFM, cohorts, repeat purchase, and category revenue.
+
+Note: This PRD includes schema, seed format, endpoints, core SQL, acceptance tests, and delivery guidelines.
+
+1) Problem Statement
+Stakeholders need a fast, self-contained app to explore e-commerce sales performance and customer behavior using only SQL—no BI tools—so they can:
+
+Track revenue and orders by time and category.
+
+Identify repeat purchase patterns and cohort retention.
+
+Segment customers via RFM.
+
+Surface top products, margins, and stock alerts.
+
+The solution must be deployable on Replit with minimal setup and be easy to extend.
+
+2) Users and Goals
+Biz stakeholders: Run prebuilt queries to answer business questions.
+
+Data/analyst learners: Read and tweak SQL to learn by doing.
+
+Engineers: Extend schema, indexes, and endpoints without steep complexity.
+
+Success criteria:
+
+Spin up in Replit under 5 minutes.
+
+Return results for each endpoint in <2s on 100k–500k row scale.
+
+Clear, documented SQL with comments and CTEs.
+
+3) Scope Overview
+In-scope:
+
+SQL schema and seed loaders.
+
+Curated analytics endpoints with SQL-only logic.
+
+Simple web UI with forms for parameters and tabular JSON/HTML results.
+
+Basic auth-free local app.
+
+Out-of-scope:
+
+Full admin dashboards, user accounts, payments, or real-time ingestion.
+
+4) Tech Stack (Replit-ready)
+Backend: Python 3 (FastAPI or Flask).
+
+DB: SQLite by default; optional Postgres (DATABASE_URL env).
+
+SQL execution: DB-API with parameterized queries.
+
+UI: Simple HTML/CSS + minimal JS (vanilla).
+
+Packaging: requirements.txt; .replit/run command.
+
+5) Data Model (Normalized, analytics-friendly)
+Tables and key fields:
+
+customers
+
+customer_id (PK, TEXT or INT)
+
+first_order_date (DATE)
+
+last_order_date (DATE)
+
+signup_date (DATE, nullable)
+
+customer_city (TEXT)
+
+customer_state (TEXT)
+
+email (TEXT, unique)
+
+products
+
+product_id (PK)
+
+category_id (FK)
+
+product_name (TEXT)
+
+unit_cost (NUMERIC(10,2))
+
+unit_price (NUMERIC(10,2))
+
+is_active (BOOLEAN)
+
+categories
+
+category_id (PK)
+
+category_name (TEXT)
+
+orders
+
+order_id (PK)
+
+customer_id (FK)
+
+order_date (DATE/TIMESTAMP)
+
+order_status (TEXT: created, paid, shipped, delivered, canceled, refunded)
+
+payment_amount (NUMERIC(10,2))
+
+payment_status (TEXT: paid, pending, failed, refunded)
+
+order_items
+
+order_item_id (PK)
+
+order_id (FK)
+
+product_id (FK)
+
+quantity (INT)
+
+unit_price (NUMERIC(10,2)) — captured at time of sale
+
+discount (NUMERIC(10,2)) — absolute per line, default 0
+
+inventory (optional but recommended for stock insights)
+
+product_id (PK, FK)
+
+on_hand_qty (INT)
+
+reorder_point (INT)
+
+reorder_qty (INT)
+
+Indices:
+
+orders(order_date), orders(customer_id)
+
+order_items(order_id), order_items(product_id)
+
+products(category_id)
+
+customers(first_order_date), customers(last_order_date)
+
+Constraints:
+
+CHECK(order_items.quantity > 0)
+
+CHECK(order_items.unit_price >= 0)
+
+CHECK(orders.payment_amount >= 0)
+
+FK cascades: delete-restrict for referential safety.
+
+6) Seed Data
+Provide CSV files in /data:
+
+customers.csv, products.csv, categories.csv, orders.csv, order_items.csv, inventory.csv
+
+Volume guidance:
+
+customers: 10,000
+
+products: 2,000
+
+categories: 20–50
+
+orders: 150,000
+
+order_items: 300,000–500,000
+
+A Python loader script:
+
+Detects SQLite vs Postgres.
+
+Creates tables if absent.
+
+Bulk loads CSVs with parameterized inserts or COPY (Postgres).
+
+Include a small “mini” dataset for quick demo (e.g., 100 customers, 2,000 orders).
+
+Note: Do not fabricate runtime data; only use provided CSVs.
+
+7) Core Analytics Queries and Endpoints
+Design principle: Each endpoint runs a single SQL statement (with CTEs) and returns JSON; the UI triggers these with parameters.
+
+Revenue by month and category
+
+Endpoint: GET /analytics/revenue-by-month-category?start=YYYY-MM&end=YYYY-MM
+
+SQL outline:
+
+Filter orders by order_date and payment_status='paid' or order_status IN ('paid','shipped','delivered').
+
+Join order_items → products → categories.
+
+Revenue = SUM((oi.unit_price*oi.quantity) - oi.discount).
+
+Group by date_trunc('month', order_date), category_name.
+
+Output: [{month, category_name, revenue}]
+
+Repeat purchase rate (monthly)
+
+Endpoint: GET /analytics/repeat-rate?start=YYYY-MM&end=YYYY-MM
+
+SQL outline:
+
+For each month m:
+
+Identify customers with orders in m.
+
+Among them, count those with any prior order before m.
+
+repeat_rate = repeaters / total_customers_in_m.
+
+Output: [{month, total_customers, repeaters, repeat_rate}]
+
+Cohort retention (signup/order cohort by first order month)
+
+Endpoint: GET /analytics/cohort-retention?start=YYYY-MM&end=YYYY-MM&horizon=12
+
+SQL outline:
+
+Cohort = date_trunc('month', MIN(order_date) per customer).
+
+Active months = distinct date_trunc('month', order_date).
+
+Build matrix of cohort_month vs months_since_cohort with counts of active customers; also return rates by dividing by cohort size.
+
+Output: long-form rows [{cohort_month, months_since, active_customers, retention_rate}], UI pivots client-side.
+
+RFM scoring (5-5-5)
+
+Endpoint: GET /analytics/rfm?as_of=YYYY-MM-DD
+
+SQL outline:
+
+Recency: as_of - MAX(order_date) days.
+
+Frequency: COUNT(DISTINCT order_id).
+
+Monetary: SUM(net_revenue per customer).
+
+Use NTILE(5) window over each metric to assign scores (Recency reversed so lower days = higher score).
+
+Return R, F, M, RFM_total, segment label (e.g., Champions, Loyal, At Risk).
+
+Output: [{customer_id, recency_days, frequency, monetary, r, f, m, rfm_total, segment}]
+
+Top-N products by margin and low-stock alerts
+
+Endpoint A: GET /analytics/top-products?metric=margin&n=10&start=YYYY-MM-DD&end=YYYY-MM-DD
+
+Margin per line = (oi.unit_price - p.unit_cost) * oi.quantity - oi.discount.
+
+Aggregate by product_id.
+
+Output: [{product_id, product_name, units, revenue, margin}]
+
+Endpoint B: GET /analytics/low-stock?n=20
+
+inventory.on_hand_qty <= inventory.reorder_point
+
+Output: [{product_id, product_name, on_hand_qty, reorder_point, recommended_order_qty}]
+
+Daily KPI snapshot (for home page)
+
+Endpoint: GET /analytics/kpi?date=YYYY-MM-DD
+
+Metrics: orders, revenue, AOV, unique_customers, new_customers, repeat_rate, top_category, top_product.
+
+Output: single JSON object.
+
+Order funnel statuses
+
+Endpoint: GET /analytics/order-funnel?start=YYYY-MM-DD&end=YYYY-MM-DD
+
+Count orders by order_status; compute conversion by stage where applicable.
+
+Output: [{status, orders}]
+
+All SQL must be included as .sql files with comments and used by the Python layer.
+
+8) SQL Details (Basic but Powerful)
+Use:
+
+CTEs for readability.
+
+Aggregations, GROUP BY.
+
+Window functions: NTILE, ROW_NUMBER, SUM() OVER(PARTITION BY ...).
+
+date_trunc (Postgres) or strftime (SQLite); handle dialect via helpers.
+
+Parameterized queries to prevent injection.
+
+RFM scoring pattern (Postgres-esque outline):
+
+Base CTE: customer_orders as net revenue and last order.
+
+Metrics CTE: recency_days, frequency, monetary.
+
+Scoring:
+
+r_score = NTILE(5) OVER (ORDER BY recency_days ASC) reversed to put recent buyers at 5.
+
+f_score = NTILE(5) OVER (ORDER BY frequency DESC).
+
+m_score = NTILE(5) OVER (ORDER BY monetary DESC).
+
+Segment mapping: CASE on r,f,m.
+
+Cohort outline:
+
+first_order_month per customer.
+
+activity_months as distinct months per customer.
+
+Join to compute months_since = age(activity_month, first_month) in months.
+
+Aggregate counts per (first_month, months_since); compute retention against cohort size.
+
+Repeat rate outline:
+
+For each month m: customers_with_order_in_m minus first-time in m; divide by customers_with_order_in_m.
+
+Revenue by month/category outline:
+
+Use line-level net = unit_price*quantity - discount; ignore canceled/refunded unless payment_status='paid'.
+
+9) API Design
+JSON responses with snake_case keys.
+
+Error format:
+{ "error": { "code": "BAD_REQUEST", "message": "..." } }
+
+Input validation:
+
+Dates: ISO strings; default ranges if omitted.
+
+n: clamp 1–100.
+
+Rate limits: not required locally.
+
+Example:
+GET /analytics/revenue-by-month-category?start=2024-01&end=2024-12
+Response:
+[
+{"month":"2024-01-01","category_name":"Electronics","revenue":125000.50},
+{"month":"2024-01-01","category_name":"Home","revenue":84500.00}
+]
+
+10) UI Requirements
+Single-page app with tabs:
+
+KPIs
+
+Revenue by Month-Category (inputs: start, end)
+
+Repeat Rate (start, end)
+
+Cohort Retention (start, end, horizon; show heatmap table via simple CSS)
+
+RFM (as_of date; table with download CSV)
+
+Top Products (metric, n, start, end)
+
+Low Stock
+
+Render simple tables; optional client-side CSV download.
+
+Show SQL used in a collapsible block for learning.
+
+Loading and error states.
+
+11) Performance and Data Quality
+Add indexes listed above; verify via EXPLAIN on core queries.
+
+Vacuum/Analyze (Postgres) or ANALYZE (SQLite) after bulk load.
+
+Basic data checks during load:
+
+Non-negative quantities, prices, discounts.
+
+order_items must reference existing orders and products.
+
+payment_amount equals sum of net lines at order-level tolerance (+/- 0.01) — warn only.
+
+12) Security
+Local only; no auth required.
+
+Parameterized SQL; never string-concatenate inputs.
+
+Disable arbitrary SQL execution from UI.
+
+13) Logging and Observability
+Log each request path, params, duration, and row count.
+
+Log SQL errors with a safe message (no PII).
+
+Simple /health endpoint.
+
+14) Testing and Acceptance Criteria
+Data load:
+
+Given CSVs, when loader runs, all tables are created and row counts logged.
+
+FK constraints enforced; failures reported with line numbers.
+
+Functional:
+
+Revenue by month-category returns non-empty for seeded months; sums match manual spot-check on sample orders.
+
+Repeat rate ∈ and increases when adding historical orders to customers.
+
+Cohort: cohort size in month t equals distinct customers with first_order_month=t.
+
+RFM: r,f,m ∈ {1..5}; top RFM_total customers align with highest monetary and recent dates in sample.
+
+Top products by margin orders products by computed margin; low-stock returns items with on_hand <= reorder_point.
+
+Performance:
+
+Each endpoint returns <2s for 300k+ order_items on Replit; if not, add suggested indexes.
+
+15) Project Structure
+/app
+
+main.py (FastAPI/Flask app)
+
+db.py (connection, dialect helpers)
+
+queries/
+
+revenue_by_month_category.sql
+
+repeat_rate.sql
+
+cohort_retention.sql
+
+rfm.sql
+
+top_products.sql
+
+low_stock.sql
+
+kpi.sql
+
+order_funnel.sql
+
+routers/analytics.py
+
+ui/
+
+index.html, styles.css, app.js
+
+/data
+
+customers.csv, products.csv, categories.csv, orders.csv, order_items.csv, inventory.csv
+
+mini/ (small demo dataset)
+
+/scripts
+
+load_data.py
+
+create_schema.sql
+
+create_indexes.sql
+
+requirements.txt
+
+.replit and replit.nix (if needed)
+
+README.md
+
+16) Implementation Notes
+SQLite vs Postgres date functions:
+
+month trunc: Postgres date_trunc('month', ts); SQLite use strftime('%Y-%m-01', ts).
+
+Provide helper that injects proper SQL snippets based on dialect; or keep two versions of SQL files with a runtime switch.
+
+Window functions are supported in both; prefer ANSI syntax.
+
+Avoid vendor-specific features beyond date functions.
+
+17) Example SQL Snippets (portable style)
+Revenue by month-category (Postgres version):
+
+WITH oi AS (SELECT oi.order_id, oi.product_id, (oi.unit_price*oi.quantity - oi.discount) AS net_line FROM order_items oi)
+
+SELECT date_trunc('month', o.order_date) AS month, c.category_name, SUM(oi.net_line) AS revenue
+FROM orders o
+JOIN oi ON oi.order_id=o.order_id
+JOIN products p ON p.product_id=oi.product_id
+JOIN categories c ON c.category_id=p.category_id
+WHERE o.order_status IN ('paid','shipped','delivered')
+AND o.order_date >= %(start)s::date
+AND o.order_date < (%(end)s::date + INTERVAL '1 month')
+GROUP BY 1,2
+ORDER BY 1,2;
+
+RFM (Postgres version, outline):
+
+WITH base AS (
+SELECT o.customer_id,
+MAX(o.order_date) AS last_order_date,
+COUNT(DISTINCT o.order_id) AS frequency,
+SUM(oi.unit_price*oi.quantity - oi.discount) AS monetary
+FROM orders o
+JOIN order_items oi ON oi.order_id=o.order_id
+WHERE o.order_status IN ('paid','shipped','delivered')
+AND o.order_date <= %(as_of)s::date
+GROUP BY o.customer_id
+),
+metrics AS (
+SELECT customer_id,
+%(as_of)s::date - last_order_date AS recency_interval,
+EXTRACT(DAY FROM (%(as_of)s::date - last_order_date))::int AS recency_days,
+frequency, monetary
+FROM base
+),
+scored AS (
+SELECT customer_id, recency_days, frequency, monetary,
+6 - NTILE(5) OVER (ORDER BY recency_days) AS r,
+NTILE(5) OVER (ORDER BY frequency DESC) AS f,
+NTILE(5) OVER (ORDER BY monetary DESC) AS m
+FROM metrics
+)
+SELECT customer_id, recency_days, frequency, monetary, r, f, m, (r+f+m) AS rfm_total,
+CASE
+WHEN r>=4 AND f>=4 AND m>=4 THEN 'Champions'
+WHEN r>=4 AND f>=3 THEN 'Loyal'
+WHEN r<=2 AND f<=2 AND m<=2 THEN 'At Risk'
+ELSE 'Others'
+END AS segment
+FROM scored
+ORDER BY rfm_total DESC, monetary DESC;
+
+Cohort retention (outline):
+
+firsts AS (SELECT customer_id, date_trunc('month', MIN(order_date)) AS cohort_month FROM orders WHERE order_status IN ('paid','shipped','delivered') GROUP BY customer_id),
+
+acts AS (SELECT DISTINCT o.customer_id, date_trunc('month', o.order_date) AS active_month FROM orders o WHERE o.order_status IN ('paid','shipped','delivered')),
+
+joined AS (SELECT f.cohort_month, a.active_month FROM firsts f JOIN acts a ON a.customer_id=f.customer_id),
+
+ready AS (SELECT cohort_month, active_month, (EXTRACT(YEAR FROM active_month)-EXTRACT(YEAR FROM cohort_month))*12 + (EXTRACT(MONTH FROM active_month)-EXTRACT(MONTH FROM cohort_month)) AS months_since FROM joined)
+
+SELECT cohort_month, months_since, COUNT(*) AS active_customers
+FROM ready
+WHERE months_since BETWEEN 0 AND %(horizon)s
+GROUP BY 1,2
+ORDER BY 1,2;
+
+Repeat purchase rate (outline):
+
+months AS (SELECT date_trunc('month', order_date) AS m, customer_id FROM orders WHERE order_status IN ('paid','shipped','delivered') GROUP BY 1,2),
+
+first_m AS (SELECT customer_id, MIN(m) AS first_m FROM months GROUP BY 1),
+
+curr AS (SELECT m, COUNT(DISTINCT customer_id) AS customers_in_m FROM months GROUP BY 1),
+
+repeaters AS (SELECT mo.m, COUNT(DISTINCT mo.customer_id) AS repeaters FROM months mo JOIN first_m f ON f.customer_id=mo.customer_id WHERE mo.m > f.first_m GROUP BY mo.m)
+
+SELECT c.m AS month, c.customers_in_m, COALESCE(r.repeaters,0) AS repeaters, CASE WHEN c.customers_in_m=0 THEN 0 ELSE COALESCE(r.repeaters,0)::decimal / c.customers_in_m END AS repeat_rate
+FROM curr c LEFT JOIN repeaters r ON r.m=c.m
+ORDER BY c.m;
+
+SQLite variants should swap date_trunc with strftime and months_since math with julianday arithmetic.
+
+18) Delivery Checklist (for Replit)
+Implement schema creation and loader scripts.
+
+Implement endpoints and link to SQL files.
+
+Build UI tabs and forms; display tables and CSV download.
+
+Provide README with:
+
+How to run
+
+How to switch to Postgres
+
+Example curl commands
+
+Known limitations
+
+Provide mini dataset and benchmark notes.
+
+EXPLAIN plans saved for core queries with notes on indexes.
+
+19) Future Extensions
+Materialized daily aggregates for instant KPIs.
+
+Promo/coupon table to analyze campaign lift.
+
+Device/channel attribution tables for funnel depth.
+
+Role-based access and API keys.
+
+Pagination and caching for heavy endpoints.
+
+20) Non-Goals
+Real-time streaming ingestion.
+
+Complex BI charting libraries.
+
+Machine learning recommendations.
+
+21) References for Query Patterns
+E-commerce SQL analysis examples show end-to-end queries for revenue, cohorts, and product performance.
+
+RFM analysis concepts and SQL scoring patterns are well-documented across practical guides.
+
+Cohort retention calculation patterns with SQL are available in multiple tutorials for building month-based cohorts.

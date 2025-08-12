@@ -1,0 +1,11 @@
+order_id,customer_id,order_date,order_status,payment_amount,payment_status
+ORD001,CUST001,2024-01-15 10:30:00,delivered,599.99,paid
+ORD002,CUST002,2024-01-20 14:15:00,delivered,1299.99,paid
+ORD003,CUST001,2024-02-01 09:45:00,shipped,149.99,paid
+ORD004,CUST003,2024-02-05 16:20:00,delivered,199.99,paid
+ORD005,CUST004,2024-02-10 11:30:00,delivered,89.99,paid
+ORD006,CUST005,2024-03-01 13:45:00,delivered,119.99,paid
+ORD007,CUST001,2024-03-15 10:00:00,delivered,49.99,paid
+ORD008,CUST002,2024-04-01 15:30:00,canceled,299.99,refunded
+ORD009,CUST003,2024-04-10 12:15:00,delivered,499.99,paid
+ORD010,CUST004,2024-05-01 14:45:00,delivered,14.99,paid

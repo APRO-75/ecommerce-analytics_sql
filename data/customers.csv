@@ -1,0 +1,6 @@
+customer_id,first_order_date,last_order_date,signup_date,customer_city,customer_state,email
+CUST001,2024-01-15,2024-11-20,2024-01-10,New York,NY,customer001@example.com
+CUST002,2024-01-20,2024-10-15,2024-01-18,Los Angeles,CA,customer002@example.com
+CUST003,2024-02-05,2024-12-01,2024-02-01,Chicago,IL,customer003@example.com
+CUST004,2024-02-10,2024-09-30,2024-02-08,Houston,TX,customer004@example.com
+CUST005,2024-03-01,2024-11-25,2024-02-28,Phoenix,AZ,customer005@example.com
